@@ -53,7 +53,8 @@ PA_MODULE_USAGE(
         "source_output_properties=<proplist> "
         "source_dont_move=<boolean> "
         "sink_dont_move=<boolean> "
-        "remix=<remix channels?> ");
+        "remix=<remix channels?> "
+        "disable_adaptive_resampling=<boolean> ");
 
 #define DEFAULT_LATENCY_MSEC 200
 
@@ -167,6 +168,7 @@ static const char* const valid_modargs[] = {
     "source_dont_move",
     "sink_dont_move",
     "remix",
+    "disable_adaptive_resampling",
     NULL,
 };
 
@@ -1261,6 +1263,7 @@ int pa__init(pa_module *m) {
     uint32_t adjust_time_sec;
     const char *n;
     bool remix = true;
+    bool disable_adaptive_resampling;
 
     pa_assert(m);
 
@@ -1356,7 +1359,15 @@ int pa__init(pa_module *m) {
         goto fail;
     }
 
-    if (adjust_time_sec != DEFAULT_ADJUST_TIME_USEC / PA_USEC_PER_SEC)
+    disable_adaptive_resampling = false;
+    if (pa_modargs_get_value_boolean(ma, "disable_adaptive_resampling", &disable_adaptive_resampling) < 0) {
+        pa_log("disable_adaptive_resampling= expects a boolean argument.");
+        goto fail;
+    }
+
+    if (disable_adaptive_resampling)
+        u->adjust_time = 0;
+    else if (adjust_time_sec != DEFAULT_ADJUST_TIME_USEC / PA_USEC_PER_SEC)
         u->adjust_time = adjust_time_sec * PA_USEC_PER_SEC;
     else
         u->adjust_time = DEFAULT_ADJUST_TIME_USEC;
@@ -1381,7 +1392,11 @@ int pa__init(pa_module *m) {
 
     pa_sink_input_new_data_set_sample_spec(&sink_input_data, &ss);
     pa_sink_input_new_data_set_channel_map(&sink_input_data, &map);
-    sink_input_data.flags = PA_SINK_INPUT_VARIABLE_RATE | PA_SINK_INPUT_START_CORKED;
+
+    if (disable_adaptive_resampling)
+        sink_input_data.flags = PA_SINK_INPUT_START_CORKED;
+    else
+        sink_input_data.flags = PA_SINK_INPUT_VARIABLE_RATE | PA_SINK_INPUT_START_CORKED;
 
     if (!remix)
         sink_input_data.flags |= PA_SINK_INPUT_NO_REMIX;
